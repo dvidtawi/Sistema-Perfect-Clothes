@@ -9,6 +9,7 @@ const port = process.env.PORT || 3000;
 
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static('public'));
+app.use('/img', express.static('img'));
 
 async function ensureSchema() {
   const schema = `
@@ -16,6 +17,7 @@ async function ensureSchema() {
       id BIGSERIAL PRIMARY KEY,
       kind TEXT NOT NULL CHECK (kind IN ('sale', 'order', 'purchase', 'production')),
       movement_date DATE NOT NULL,
+      registro_orden BIGINT NOT NULL DEFAULT nextval('movements_registro_orden_seq'),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
@@ -114,7 +116,26 @@ async function ensureSchema() {
     );
   `;
 
+  await query(`CREATE SEQUENCE IF NOT EXISTS movements_registro_orden_seq`);
   await query(schema);
+  await query(`ALTER TABLE movements ADD COLUMN IF NOT EXISTS registro_orden BIGINT`);
+  await query(`
+    UPDATE movements
+    SET registro_orden = id
+    WHERE registro_orden IS NULL
+  `);
+  await query(`
+    ALTER TABLE movements
+    ALTER COLUMN registro_orden SET DEFAULT nextval('movements_registro_orden_seq'),
+    ALTER COLUMN registro_orden SET NOT NULL
+  `);
+  await query(`
+    SELECT setval(
+      'movements_registro_orden_seq',
+      GREATEST(COALESCE((SELECT MAX(registro_orden) FROM movements), 0), 1),
+      true
+    )
+  `);
   await query(`ALTER TABLE IF EXISTS sales ADD COLUMN IF NOT EXISTS commission_mode TEXT NOT NULL DEFAULT 'total'`);
   await query(`ALTER TABLE IF EXISTS orders ADD COLUMN IF NOT EXISTS commission_mode TEXT NOT NULL DEFAULT 'total'`);
 }
@@ -154,6 +175,16 @@ function movementLabel(kind) {
     default:
       return kind;
   }
+}
+
+function compareExportRows(first, second) {
+  const firstOrder = Number(first.registro_orden || first.id);
+  const secondOrder = Number(second.registro_orden || second.id);
+  return secondOrder - firstOrder;
+}
+
+function compareExportRowsAscending(first, second) {
+  return -compareExportRows(first, second);
 }
 
 function mapProductRows(rows) {
@@ -213,6 +244,7 @@ async function fetchPurchaseRows(from, to, id) {
         m.id,
         m.kind,
         m.movement_date,
+        m.registro_orden,
         p.material_name AS product_name_snapshot,
         p.quantity,
         p.price_total AS total_price,
@@ -239,7 +271,7 @@ async function fetchPurchaseRows(from, to, id) {
       FROM movements m
       JOIN purchases p ON p.movement_id = m.id
       ${where}
-      ORDER BY m.movement_date DESC, m.id DESC
+      ORDER BY m.registro_orden DESC
     `,
     params
   );
@@ -268,6 +300,7 @@ async function fetchSaleLikeRows(kind, from, to, id) {
         m.id,
         m.kind,
         m.movement_date,
+        m.registro_orden,
         pr.name AS product_name_snapshot,
         COALESCE(SUM(i.quantity), 0)::int AS quantity,
         s.total_price,
@@ -300,10 +333,10 @@ async function fetchSaleLikeRows(kind, from, to, id) {
       LEFT JOIN ${itemsTable} i ON i.${itemFk} = s.movement_id
       ${where}
       GROUP BY
-        m.id, m.kind, m.movement_date, pr.name, s.total_price, s.product_id,
+        m.id, m.kind, m.movement_date, m.registro_orden, pr.name, s.total_price, s.product_id,
         s.client_id, c.name, s.location, s.executed_by, s.commission, s.observations
         , s.commission_mode
-      ORDER BY m.movement_date DESC, m.id DESC
+      ORDER BY m.registro_orden DESC
     `,
     params
   );
@@ -328,6 +361,7 @@ async function fetchProductionRows(from, to, id) {
         m.id,
         m.kind,
         m.movement_date,
+        m.registro_orden,
         pr.name AS product_name_snapshot,
         COALESCE(SUM(i.quantity), 0)::int AS quantity,
         p.total_price,
@@ -357,8 +391,8 @@ async function fetchProductionRows(from, to, id) {
       LEFT JOIN products pr ON pr.id = p.product_id
       LEFT JOIN production_items i ON i.production_movement_id = p.movement_id
       ${where}
-      GROUP BY m.id, m.kind, m.movement_date, pr.name, p.total_price, p.product_id, p.observations
-      ORDER BY m.movement_date DESC, m.id DESC
+      GROUP BY m.id, m.kind, m.movement_date, m.registro_orden, pr.name, p.total_price, p.product_id, p.observations
+      ORDER BY m.registro_orden DESC
     `,
     params
   );
@@ -412,10 +446,13 @@ app.get('/api/products', async (_req, res) => {
 app.post('/api/products', async (req, res) => {
   try {
     const familyName = cleanText(req.body.familyName || req.body.name);
-    const color = cleanText(req.body.color);
-    const price = asMoney(req.body.price);
-    if (!familyName || !color || price === null) {
-      return res.status(400).json({ error: 'Nombre, color y precio son requeridos.' });
+    const variants = Array.isArray(req.body.variants)
+      ? req.body.variants
+          .map((variant) => ({ color: cleanText(variant.color), price: asMoney(variant.price) }))
+          .filter((variant) => variant.color && variant.price !== null)
+      : [{ color: cleanText(req.body.color), price: asMoney(req.body.price) }];
+    if (!familyName || !variants.length) {
+      return res.status(400).json({ error: 'Nombre y al menos un color con precio son requeridos.' });
     }
 
     const result = await transaction(async (client) => {
@@ -434,17 +471,21 @@ app.post('/api/products', async (req, res) => {
         await client.query(`UPDATE products SET name = $1 WHERE id = $2`, [familyName, productId]);
       }
 
-      const variant = await client.query(
-        `
-          INSERT INTO product_colors (product_id, color, price)
-          VALUES ($1, $2, $3)
-          ON CONFLICT (product_id, color)
-          DO UPDATE SET price = EXCLUDED.price
-          RETURNING id
-        `,
-        [productId, color, price]
-      );
-      return { productId, colorId: variant.rows[0].id };
+      const colorIds = [];
+      for (const variant of variants) {
+        const result = await client.query(
+          `
+            INSERT INTO product_colors (product_id, color, price)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (product_id, color)
+            DO UPDATE SET price = EXCLUDED.price
+            RETURNING id
+          `,
+          [productId, variant.color, variant.price]
+        );
+        colorIds.push(result.rows[0].id);
+      }
+      return { productId, colorIds };
     });
 
     res.status(201).json(result);
@@ -455,19 +496,52 @@ app.post('/api/products', async (req, res) => {
 
 app.put('/api/products/:id', async (req, res) => {
   try {
-    const colorId = Number(req.params.id);
+    const productId = Number(req.params.id);
     const familyName = cleanText(req.body.familyName);
-    const color = cleanText(req.body.color);
-    const price = asMoney(req.body.price);
-    if (!colorId || !familyName || !color || price === null) {
+    const variants = Array.isArray(req.body.variants)
+      ? req.body.variants
+          .map((variant) => ({
+            id: Number(variant.id) || null,
+            color: cleanText(variant.color),
+            price: asMoney(variant.price),
+          }))
+          .filter((variant) => variant.color && variant.price !== null)
+      : [{ id: Number(req.body.colorId) || null, color: cleanText(req.body.color), price: asMoney(req.body.price) }];
+    if (!productId || !familyName || !variants.length) {
       return res.status(400).json({ error: 'Datos invalidos.' });
     }
 
     const result = await transaction(async (client) => {
-      const variant = await client.query(`SELECT id, product_id FROM product_colors WHERE id = $1`, [colorId]);
-      if (!variant.rows[0]) throw new Error('Color de producto no encontrado.');
-      await client.query(`UPDATE products SET name = $1 WHERE id = $2`, [familyName, variant.rows[0].product_id]);
-      await client.query(`UPDATE product_colors SET color = $1, price = $2 WHERE id = $3`, [color, price, colorId]);
+      const product = await client.query(`SELECT id FROM products WHERE id = $1`, [productId]);
+      if (!product.rows[0]) throw new Error('Producto no encontrado.');
+      await client.query(`UPDATE products SET name = $1 WHERE id = $2`, [familyName, productId]);
+
+      const keptIds = [];
+      for (const variant of variants) {
+        const saved = variant.id
+          ? await client.query(
+              `UPDATE product_colors SET color = $1, price = $2 WHERE id = $3 AND product_id = $4 RETURNING id`,
+              [variant.color, variant.price, variant.id, productId]
+            )
+          : { rows: [] };
+        const inserted = saved.rows[0]
+          ? saved
+          : await client.query(
+              `
+                INSERT INTO product_colors (product_id, color, price)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (product_id, color)
+                DO UPDATE SET price = EXCLUDED.price
+                RETURNING id
+              `,
+              [productId, variant.color, variant.price]
+            );
+        keptIds.push(inserted.rows[0].id);
+      }
+      await client.query(
+        `DELETE FROM product_colors WHERE product_id = $1 AND NOT (id = ANY($2::bigint[]))`,
+        [productId, keptIds]
+      );
       return { ok: true };
     });
 
@@ -479,9 +553,9 @@ app.put('/api/products/:id', async (req, res) => {
 
 app.delete('/api/products/:id', async (req, res) => {
   try {
-    const colorId = Number(req.params.id);
-    if (!colorId) return res.status(400).json({ error: 'ID invalido.' });
-    await query(`DELETE FROM product_colors WHERE id = $1`, [colorId]);
+    const productId = Number(req.params.id);
+    if (!productId) return res.status(400).json({ error: 'ID invalido.' });
+    await query(`DELETE FROM products WHERE id = $1`, [productId]);
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -554,10 +628,7 @@ app.get('/api/movements', async (req, res) => {
       fetchSaleLikeRows('sale'),
       fetchSaleLikeRows('order'),
     ]);
-    res.json([...sales, ...orders].sort((a, b) => {
-      if (a.movement_date === b.movement_date) return Number(b.id) - Number(a.id);
-      return a.movement_date < b.movement_date ? 1 : -1;
-    }));
+    res.json([...sales, ...orders].sort(compareExportRows));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -829,10 +900,7 @@ app.get('/api/export', async (req, res) => {
       fetchProductionRows(from, to),
     ]);
 
-    const rows = [...sales, ...orders, ...purchases, ...productions].sort((a, b) => {
-      if (a.movement_date === b.movement_date) return Number(a.id) - Number(b.id);
-      return a.movement_date < b.movement_date ? -1 : 1;
-    });
+    const rows = [...sales, ...orders, ...purchases, ...productions].sort(compareExportRowsAscending);
 
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Movimientos');
@@ -854,7 +922,7 @@ app.get('/api/export', async (req, res) => {
     worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
     worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
 
-    rows.forEach((row) => {
+    rows.forEach((row, index) => {
       const items = Array.isArray(row.items) ? row.items : [];
       const color = items
         .map((item) => (item.color ? `${item.color}${item.quantity ? ` x${item.quantity}` : ''}` : ''))
@@ -869,7 +937,7 @@ app.get('/api/export', async (req, res) => {
         ? Number(row.commission || 0) * Number(row.quantity || 0)
         : Number(row.commission || 0);
       worksheet.addRow({
-        nro: row.id,
+        nro: index + 1,
         fecha: row.movement_date,
         tipo_movimiento: movementLabel(row.kind),
         tipo_producto: row.product_name_snapshot,

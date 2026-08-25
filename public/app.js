@@ -107,7 +107,7 @@ const state = {
   dashboard: { products: 0, clients: 0, sales: 0, purchases: 0, production: 0 },
   products: [],
   clients: [],
-  activeSection: 'register',
+  activeSection: 'consult',
   activeRegisterForm: 'product',
   activeConsultTab: 'sales',
   saleFilter: 'all',
@@ -116,11 +116,10 @@ const state = {
 };
 
 const els = {
-  registerSection: document.querySelector('#register-section'),
   consultSection: document.querySelector('#consult-section'),
   exportSection: document.querySelector('#export-section'),
-  formArea: document.querySelector('#form-area'),
   tableArea: document.querySelector('#table-area'),
+  consultToolbar: document.querySelector('#consult-toolbar'),
   productsSidebar: document.querySelector('#products-sidebar'),
   clientsSidebar: document.querySelector('#clients-sidebar'),
   modal: document.querySelector('#modal'),
@@ -218,7 +217,6 @@ function closeModal() {
 
 function setSection(section) {
   state.activeSection = section;
-  els.registerSection.classList.toggle('hidden', section !== 'register');
   els.consultSection.classList.toggle('hidden', section !== 'consult');
   els.exportSection.classList.toggle('hidden', section !== 'export');
 }
@@ -257,10 +255,6 @@ function basePage() {
     btn.addEventListener('click', () => setSection(btn.dataset.nav));
   });
 
-  document.querySelectorAll('.tile, .mini-action').forEach((btn) => {
-    btn.addEventListener('click', () => renderRegisterForm(btn.dataset.form));
-  });
-
   document.querySelectorAll('.tab').forEach((btn) => {
     btn.addEventListener('click', () => {
       state.activeConsultTab = btn.dataset.tab;
@@ -290,101 +284,140 @@ function basePage() {
 }
 
 function renderDashboard() {
-  document.querySelector('#metric-products').textContent = state.dashboard.products;
-  document.querySelector('#metric-clients').textContent = state.dashboard.clients;
-  document.querySelector('#metric-sales').textContent = state.dashboard.sales;
-  document.querySelector('#metric-purchases').textContent = state.dashboard.purchases;
+  const metricProducts = document.querySelector('#metric-products');
+  const metricClients = document.querySelector('#metric-clients');
+  const metricSales = document.querySelector('#metric-sales');
+  const metricPurchases = document.querySelector('#metric-purchases');
+  if (metricProducts) metricProducts.textContent = state.dashboard.products;
+  if (metricClients) metricClients.textContent = state.dashboard.clients;
+  if (metricSales) metricSales.textContent = state.dashboard.sales;
+  if (metricPurchases) metricPurchases.textContent = state.dashboard.purchases;
 }
 
 function renderSidebar() {
-  els.productsSidebar.innerHTML = state.products.length
-    ? state.products
-        .map((family) => {
-          const colors = family.variants.map((variant) => variant.color).join(', ');
-          return `
-            <div class="list-item">
-              <strong>${escapeHtml(family.name)}</strong>
-              <small>${escapeHtml(colors || 'Sin colores')}${family.variants[0] ? ` - Bs ${money(family.variants[0].price)}` : ''}</small>
-            </div>
-          `;
-        })
-        .join('')
-    : '<div class="subtle">No hay productos registrados.</div>';
+  if (els.productsSidebar) {
+    els.productsSidebar.innerHTML = state.products.length
+      ? state.products
+          .map((family) => {
+            const colors = family.variants.map((variant) => variant.color).join(', ');
+            return `
+              <div class="list-item">
+                <strong>${escapeHtml(family.name)}</strong>
+                <small>${escapeHtml(colors || 'Sin colores')}${family.variants[0] ? ` - Bs ${money(family.variants[0].price)}` : ''}</small>
+              </div>
+            `;
+          })
+          .join('')
+      : '<div class="subtle">No hay productos registrados.</div>';
+  }
 
-  els.clientsSidebar.innerHTML = state.clients.length
-    ? state.clients
-        .map(
-          (client) => `
-          <div class="list-item">
-            <strong>${escapeHtml(client.name)}</strong>
-            <small>${escapeHtml(client.phone || client.ci || 'Sin datos extra')}</small>
-          </div>
-        `
-        )
-        .join('')
-    : '<div class="subtle">No hay clientes registrados.</div>';
+  if (els.clientsSidebar) {
+    els.clientsSidebar.innerHTML = state.clients.length
+      ? state.clients
+          .map(
+            (client) => `
+            <div class="list-item">
+              <strong>${escapeHtml(client.name)}</strong>
+              <small>${escapeHtml(client.phone || client.ci || 'Sin datos extra')}</small>
+            </div>
+          `
+          )
+          .join('')
+      : '<div class="subtle">No hay clientes registrados.</div>';
+  }
 }
 
-function renderRegisterForm(type) {
+function variantRowMarkup(variant = {}) {
+  return `
+    <div class="variant-row" data-variant-row>
+      <input type="hidden" name="variantId" value="${escapeHtml(variant.id || '')}" />
+      <label class="field">
+        <span>Color</span>
+        <input name="variantColor" value="${escapeHtml(variant.color || '')}" placeholder="Negro" required />
+      </label>
+      <label class="field">
+        <span>Precio</span>
+        <input name="variantPrice" type="number" min="0" step="0.01" value="${variant.price ?? ''}" required />
+      </label>
+      <button class="danger" type="button" data-remove-variant>Quitar</button>
+    </div>
+  `;
+}
+
+function productFormMarkup(product = null) {
+  const variants = product?.variants?.length ? product.variants : [{}];
+  const editing = Boolean(product);
+  return `
+    <div class="card">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">${editing ? 'Editar' : 'Registrar'}</p>
+          <h2>Producto</h2>
+        </div>
+        <button class="ghost" type="button" data-close-modal>Cerrar</button>
+      </div>
+      <form class="form-grid" data-product-form data-product-id="${editing ? product.id : ''}">
+        <label class="field full">
+          <span>Nombre</span>
+          <input name="familyName" placeholder="Bomber Entero" value="${escapeHtml(product?.name || '')}" required />
+        </label>
+        <div class="field full">
+          <span>Colores y precios</span>
+          <div class="variant-stack" data-variant-rows>
+            ${variants.map((variant) => variantRowMarkup(variant)).join('')}
+          </div>
+          <div class="secondary-actions" style="margin-top:12px;">
+            <button class="ghost" type="button" data-add-variant>Agregar color</button>
+          </div>
+        </div>
+        <div class="form-actions full">
+          <button class="primary" type="submit">${editing ? 'Guardar cambios' : 'Guardar producto'}</button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
+function clientFormMarkup(client = null) {
+  const editing = Boolean(client);
+  return `
+    <div class="card">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">${editing ? 'Editar' : 'Registrar'}</p>
+          <h2>Cliente</h2>
+        </div>
+        <button class="ghost" type="button" data-close-modal>Cerrar</button>
+      </div>
+      <form class="form-grid" data-client-form data-client-id="${editing ? client.id : ''}">
+        <label class="field full">
+          <span>Nombre</span>
+          <input name="name" placeholder="Nombre del cliente" value="${escapeHtml(client?.name || '')}" required />
+        </label>
+        <label class="field">
+          <span>CI opcional</span>
+          <input name="ci" placeholder="1234567" value="${escapeHtml(client?.ci || '')}" />
+        </label>
+        <label class="field">
+          <span>Numero de telefono</span>
+          <input name="phone" placeholder="70000000" value="${escapeHtml(client?.phone || '')}" />
+        </label>
+        <div class="form-actions full">
+          <button class="primary" type="submit">${editing ? 'Guardar cambios' : 'Guardar cliente'}</button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
+function renderRegisterForm(type, payload = null) {
   state.activeRegisterForm = type;
   state.editing = null;
   const date = todayISO();
 
   const templates = {
-    product: `
-      <div class="card">
-        <div class="modal-head">
-          <div>
-            <p class="eyebrow">Registrar</p>
-            <h2>Producto</h2>
-          </div>
-        </div>
-        <form class="form-grid" data-form-type="product">
-          <label class="field full">
-            <span>Nombre</span>
-            <input name="familyName" placeholder="Bomber Entero" required />
-          </label>
-          <label class="field">
-            <span>Color</span>
-            <input name="color" placeholder="Negro" required />
-          </label>
-          <label class="field">
-            <span>Precio</span>
-            <input name="price" type="number" min="0" step="0.01" required />
-          </label>
-          <div class="form-actions full">
-            <button class="primary" type="submit">Guardar producto</button>
-          </div>
-        </form>
-      </div>
-    `,
-    client: `
-      <div class="card">
-        <div class="modal-head">
-          <div>
-            <p class="eyebrow">Registrar</p>
-            <h2>Cliente</h2>
-          </div>
-        </div>
-        <form class="form-grid" data-form-type="client">
-          <label class="field full">
-            <span>Nombre</span>
-            <input name="name" placeholder="Nombre del cliente" required />
-          </label>
-          <label class="field">
-            <span>CI opcional</span>
-            <input name="ci" placeholder="1234567" />
-          </label>
-          <label class="field">
-            <span>Numero de telefono</span>
-            <input name="phone" placeholder="70000000" />
-          </label>
-          <div class="form-actions full">
-            <button class="primary" type="submit">Guardar cliente</button>
-          </div>
-        </form>
-      </div>
-    `,
+    product: productFormMarkup(payload),
+    client: clientFormMarkup(payload),
     sale: movementFormTemplate({
       title: 'Venta',
       kind: 'sale',
@@ -425,6 +458,7 @@ function renderRegisterForm(type) {
             <p class="eyebrow">Registrar</p>
             <h2>Compra</h2>
           </div>
+          <button class="ghost" type="button" data-close-modal>Cerrar</button>
         </div>
         <form class="form-grid" data-form-type="purchase">
           <div class="field">
@@ -465,25 +499,26 @@ function renderRegisterForm(type) {
     `,
   };
 
-  els.formArea.innerHTML = templates[type];
-  initDatePickers(els.formArea);
+  openModal(templates[type]);
+  initDatePickers(els.modalContent);
+
   if (type === 'sale' || type === 'order' || type === 'production') {
-    const form = els.formArea.querySelector('form');
+    const form = els.modalContent.querySelector('form');
     wireMovementForm(form, { kind: type, allowClient: type === 'order', allowPriceEdit: type === 'order' });
   }
 
   if (type === 'purchase') {
-    const form = els.formArea.querySelector('form');
+    const form = els.modalContent.querySelector('form');
     form.addEventListener('submit', handlePurchaseSubmit);
   }
 
   if (type === 'product') {
-    const form = els.formArea.querySelector('form');
-    form.addEventListener('submit', handleProductSubmit);
+    const form = els.modalContent.querySelector('form');
+    bindProductModal(form);
   }
 
   if (type === 'client') {
-    const form = els.formArea.querySelector('form');
+    const form = els.modalContent.querySelector('form');
     form.addEventListener('submit', handleClientSubmit);
   }
 }
@@ -559,7 +594,10 @@ function movementFormTemplate({
           <p class="eyebrow">Registrar</p>
           <h2>${title}</h2>
         </div>
-        <div class="pill">Total automatico con validaciones</div>
+          <div class="secondary-actions">
+            <div class="pill">Total automatico con validaciones</div>
+            <button class="ghost" type="button" data-close-modal>Cerrar</button>
+          </div>
       </div>
       <form class="form-grid" data-form-type="${kind}" data-allow-price-edit="${allowPriceEdit ? '1' : '0'}">
         <div class="field">
@@ -593,10 +631,12 @@ function movementFormTemplate({
           <span>Cantidad total</span>
           <input name="quantityTotal" type="number" min="1" step="1" required />
         </label>
-        <label class="field">
-          <span>Precio total</span>
-          <input name="totalPrice" type="number" min="0" step="0.01" readonly />
-        </label>
+        ${kind === 'production' ? '' : `
+          <label class="field">
+            <span>Precio total</span>
+            <input name="totalPrice" type="number" min="0" step="0.01" readonly />
+          </label>
+        `}
         <label class="field full">
           <span>Observaciones</span>
           <textarea name="observations" placeholder="Notas opcionales"></textarea>
@@ -805,9 +845,22 @@ function wireMovementForm(form, config) {
       });
       showToast(state.editing ? 'Movimiento actualizado.' : 'Movimiento guardado.');
       state.editing = null;
+      closeModal();
       await refreshAll();
-      renderRegisterForm('product');
+      state.activeConsultTab =
+        kind === 'sale'
+          ? 'sales'
+          : kind === 'order'
+            ? 'sales'
+            : kind === 'purchase'
+              ? 'purchase'
+              : 'production';
       setSection('consult');
+      document.querySelectorAll('.tab').forEach((el) => {
+        el.classList.toggle('active', el.dataset.tab === state.activeConsultTab);
+      });
+      renderConsultToolbar();
+      renderConsultView();
     } catch (error) {
       showToast(error.message);
     }
@@ -961,6 +1014,7 @@ function handlePurchaseSubmit(event) {
   })
     .then(async () => {
       showToast('Compra guardada.');
+      closeModal();
       state.activeConsultTab = 'purchase';
       await refreshAll({ renderConsult: false });
       document.querySelectorAll('.tab').forEach((el) => {
@@ -975,23 +1029,31 @@ function handlePurchaseSubmit(event) {
 function handleProductSubmit(event) {
   event.preventDefault();
   const form = event.currentTarget;
+  const familyName = form.elements.familyName.value.trim();
+  const variants = readProductVariants(form);
+  const productId = form.dataset.productId ? Number(form.dataset.productId) : null;
   const payload = {
-    familyName: form.elements.familyName.value.trim(),
-    color: form.elements.color.value.trim(),
-    price: Number(form.elements.price.value || 0),
+    familyName,
+    variants,
   };
-  if (!payload.familyName || !payload.color || payload.price < 0) {
-    showToast('Completa nombre, color y precio.');
+  if (!payload.familyName || !payload.variants.length) {
+    showToast('Completa el nombre y al menos un color.');
     return;
   }
-  api('/api/products', {
-    method: 'POST',
+  api(`/api/products${productId ? `/${productId}` : ''}`, {
+    method: productId ? 'PUT' : 'POST',
     body: JSON.stringify(payload),
   })
     .then(async () => {
-      showToast('Producto guardado.');
+      showToast(productId ? 'Producto actualizado.' : 'Producto guardado.');
+      closeModal();
       await refreshAll();
-      renderRegisterForm('product');
+      state.activeConsultTab = 'products';
+      setSection('consult');
+      document.querySelectorAll('.tab').forEach((el) => {
+        el.classList.toggle('active', el.dataset.tab === state.activeConsultTab);
+      });
+      renderConsultView();
     })
     .catch((error) => showToast(error.message));
 }
@@ -999,27 +1061,61 @@ function handleProductSubmit(event) {
 function handleClientSubmit(event) {
   event.preventDefault();
   const form = event.currentTarget;
+  const clientId = form.dataset.clientId ? Number(form.dataset.clientId) : null;
   const payload = {
     name: form.elements.name.value.trim(),
     ci: form.elements.ci.value.trim(),
     phone: form.elements.phone.value.trim(),
   };
   if (!payload.name) return showToast('El nombre del cliente es obligatorio.');
-  api('/api/clients', {
-    method: 'POST',
+  api(`/api/clients${clientId ? `/${clientId}` : ''}`, {
+    method: clientId ? 'PUT' : 'POST',
     body: JSON.stringify(payload),
   })
     .then(async () => {
-      showToast('Cliente guardado.');
+      showToast(clientId ? 'Cliente actualizado.' : 'Cliente guardado.');
+      closeModal();
       await refreshAll();
-      renderRegisterForm('client');
+      state.activeConsultTab = 'clients';
+      setSection('consult');
+      document.querySelectorAll('.tab').forEach((el) => {
+        el.classList.toggle('active', el.dataset.tab === state.activeConsultTab);
+      });
+      renderConsultView();
     })
     .catch((error) => showToast(error.message));
+}
+
+function renderConsultToolbar() {
+  if (!els.consultToolbar) return;
+  const tab = state.activeConsultTab;
+  if (tab === 'sales') {
+    els.consultToolbar.innerHTML = `
+      <button class="primary" data-form="sale">Registrar venta</button>
+      <button class="primary" data-form="order">Registrar pedido</button>
+    `;
+    return;
+  }
+  const registerLabel = tab === 'purchase'
+    ? 'Registrar compra'
+    : tab === 'production'
+      ? 'Registrar produccion'
+      : tab === 'products'
+        ? 'Registrar producto'
+        : 'Registrar cliente';
+  const formType = tab === 'products' ? 'product' : tab === 'clients' ? 'client' : tab;
+  els.consultToolbar.innerHTML = `
+    <button class="primary" data-form="${formType}">${registerLabel}</button>
+  `;
 }
 
 function renderConsultView() {
   const requestId = ++state.consultRequestId;
   const tab = state.activeConsultTab;
+  renderConsultToolbar();
+  document.querySelectorAll('.subtabs').forEach((node) => {
+    node.style.display = tab === 'sales' ? 'flex' : 'none';
+  });
   if (tab === 'sales') {
     api(`/api/movements?group=sales`)
       .then((rows) => {
@@ -1040,6 +1136,20 @@ function renderConsultView() {
       .then((rows) => {
         if (requestId !== state.consultRequestId) return;
         els.tableArea.innerHTML = renderMovementTable(rows, 'production');
+      })
+      .catch((error) => (els.tableArea.innerHTML = `<div class="card">${escapeHtml(error.message)}</div>`));
+  } else if (tab === 'products') {
+    api('/api/products')
+      .then((rows) => {
+        if (requestId !== state.consultRequestId) return;
+        els.tableArea.innerHTML = renderProductTable(rows);
+      })
+      .catch((error) => (els.tableArea.innerHTML = `<div class="card">${escapeHtml(error.message)}</div>`));
+  } else if (tab === 'clients') {
+    api('/api/clients')
+      .then((rows) => {
+        if (requestId !== state.consultRequestId) return;
+        els.tableArea.innerHTML = renderClientTable(rows);
       })
       .catch((error) => (els.tableArea.innerHTML = `<div class="card">${escapeHtml(error.message)}</div>`));
   }
@@ -1065,7 +1175,6 @@ function renderMovementTable(rows, mode) {
           const tipo = row.kind === 'sale' ? 'Venta' : row.kind === 'order' ? 'Pedido' : row.kind === 'purchase' ? 'Compra' : 'Produccion';
           const actions = `
             <div class="row-actions">
-              <button class="small-btn" data-view-movement="${row.id}">Ficha</button>
               <button class="small-btn" data-edit-movement="${row.id}">Editar</button>
               <button class="small-btn danger" data-delete-movement="${row.id}">Eliminar</button>
             </div>
@@ -1073,7 +1182,7 @@ function renderMovementTable(rows, mode) {
 
           if (mode === 'purchase') {
             return `
-              <tr>
+              <tr class="movement-row" data-view-movement="${row.id}">
                 <td>${formatDate(row.movement_date)}</td>
                 <td>${escapeHtml(row.product_name_snapshot)}</td>
                 <td>${row.quantity}</td>
@@ -1088,7 +1197,7 @@ function renderMovementTable(rows, mode) {
 
           if (mode === 'production') {
             return `
-              <tr>
+              <tr class="movement-row" data-view-movement="${row.id}">
                 <td>${formatDate(row.movement_date)}</td>
                 <td>${escapeHtml(row.product_name_snapshot)}</td>
                 <td>${row.quantity}</td>
@@ -1100,7 +1209,7 @@ function renderMovementTable(rows, mode) {
           }
 
           return `
-            <tr>
+            <tr class="movement-row" data-view-movement="${row.id}">
               <td>${formatDate(row.movement_date)}</td>
               <td><span class="pill">${tipo}</span></td>
               <td>${escapeHtml(row.product_name_snapshot)}</td>
@@ -1192,67 +1301,114 @@ function renderMovementDetail(movement) {
   `;
 }
 
-function renderProductEditor(product) {
-  const variant = product.variants[0] || {};
+function readProductVariants(form) {
+  const rows = Array.from(form.querySelectorAll('[data-variant-row]'));
+  return rows
+    .map((row) => ({
+      id: row.querySelector('[name="variantId"]')?.value || '',
+      color: row.querySelector('[name="variantColor"]')?.value.trim() || '',
+      price: Number(row.querySelector('[name="variantPrice"]')?.value || 0),
+    }))
+    .filter((variant) => variant.color && variant.price >= 0);
+}
+
+function bindProductModal(form) {
+  const rowsWrap = form.querySelector('[data-variant-rows]');
+
+  function addVariantRow(variant = {}) {
+    const template = document.createElement('div');
+    template.innerHTML = variantRowMarkup(variant).trim();
+    rowsWrap.appendChild(template.firstElementChild);
+  }
+
+  form.addEventListener('click', (event) => {
+    if (event.target.matches('[data-add-variant]')) {
+      event.preventDefault();
+      addVariantRow();
+    }
+    if (event.target.matches('[data-remove-variant]')) {
+      event.preventDefault();
+      const row = event.target.closest('[data-variant-row]');
+      if (row && rowsWrap.children.length > 1) {
+        row.remove();
+      } else if (row) {
+        const colorInput = row.querySelector('[name="variantColor"]');
+        const priceInput = row.querySelector('[name="variantPrice"]');
+        if (colorInput) colorInput.value = '';
+        if (priceInput) priceInput.value = '';
+      }
+    }
+  });
+
+  form.addEventListener('submit', handleProductSubmit);
+}
+
+function renderProductTable(rows) {
+  const columns = ['Producto', 'Colores y precios', 'Acciones'];
+  const body = rows.length
+    ? rows
+        .map((product) => {
+          const colors = (product.variants || [])
+            .map((variant) => `${escapeHtml(variant.color)} - Bs ${money(variant.price)}`)
+            .join(' | ');
+          return `
+            <tr>
+              <td>${escapeHtml(product.name)}</td>
+              <td>${escapeHtml(colors || 'Sin colores')}</td>
+              <td>
+                <div class="row-actions">
+                  <button class="small-btn" data-product-edit="${product.id}">Editar</button>
+                  <button class="small-btn danger" data-product-delete="${product.id}">Eliminar</button>
+                </div>
+              </td>
+            </tr>
+          `;
+        })
+        .join('')
+    : '<tr><td colspan="3" class="subtle">No hay productos registrados.</td></tr>';
+
   return `
-    <div class="modal-body">
-      <div class="modal-head">
-        <div>
-          <p class="eyebrow">Editar</p>
-          <h2>Producto</h2>
-        </div>
-        <button class="ghost" data-close-modal>Cerrar</button>
-      </div>
-      <form class="form-grid" data-product-edit="${variant.id}">
-        <label class="field full">
-          <span>Nombre</span>
-          <input name="familyName" value="${escapeHtml(product.name)}" required />
-        </label>
-        <label class="field">
-          <span>Color</span>
-          <input name="color" value="${escapeHtml(variant.color || '')}" required />
-        </label>
-        <label class="field">
-          <span>Precio</span>
-          <input name="price" type="number" min="0" step="0.01" value="${variant.price || 0}" required />
-        </label>
-        <div class="form-actions full">
-          <button class="primary" type="submit">Guardar cambios</button>
-        </div>
-      </form>
-    </div>
+    <table>
+      <thead><tr>${columns.map((column) => `<th>${column}</th>`).join('')}</tr></thead>
+      <tbody>${body}</tbody>
+    </table>
   `;
 }
 
-function renderClientEditor(client) {
+function renderClientTable(rows) {
+  const columns = ['Nombre', 'CI', 'Telefono', 'Acciones'];
+  const body = rows.length
+    ? rows
+        .map((client) => `
+          <tr>
+            <td>${escapeHtml(client.name)}</td>
+            <td>${escapeHtml(client.ci || '')}</td>
+            <td>${escapeHtml(client.phone || '')}</td>
+            <td>
+              <div class="row-actions">
+                <button class="small-btn" data-client-edit="${client.id}">Editar</button>
+                <button class="small-btn danger" data-client-delete="${client.id}">Eliminar</button>
+              </div>
+            </td>
+          </tr>
+        `)
+        .join('')
+    : '<tr><td colspan="4" class="subtle">No hay clientes registrados.</td></tr>';
+
   return `
-    <div class="modal-body">
-      <div class="modal-head">
-        <div>
-          <p class="eyebrow">Editar</p>
-          <h2>Cliente</h2>
-        </div>
-        <button class="ghost" data-close-modal>Cerrar</button>
-      </div>
-      <form class="form-grid" data-client-edit="${client.id}">
-        <label class="field full">
-          <span>Nombre</span>
-          <input name="name" value="${escapeHtml(client.name)}" required />
-        </label>
-        <label class="field">
-          <span>CI</span>
-          <input name="ci" value="${escapeHtml(client.ci || '')}" />
-        </label>
-        <label class="field">
-          <span>Telefono</span>
-          <input name="phone" value="${escapeHtml(client.phone || '')}" />
-        </label>
-        <div class="form-actions full">
-          <button class="primary" type="submit">Guardar cambios</button>
-        </div>
-      </form>
-    </div>
+    <table>
+      <thead><tr>${columns.map((column) => `<th>${column}</th>`).join('')}</tr></thead>
+      <tbody>${body}</tbody>
+    </table>
   `;
+}
+
+function renderProductEditor(product) {
+  return productFormMarkup(product);
+}
+
+function renderClientEditor(client) {
+  return clientFormMarkup(client);
 }
 
 function handleBodyClick(event) {
@@ -1261,11 +1417,19 @@ function handleBodyClick(event) {
     return;
   }
 
+  const registerButton = event.target.closest('[data-form]');
+  if (registerButton) {
+    event.preventDefault();
+    renderRegisterForm(registerButton.dataset.form);
+    return;
+  }
+
   const viewButton = event.target.closest('[data-view-movement]');
-  if (viewButton) {
+  if (viewButton && !event.target.closest('button')) {
     api(`/api/movements/${viewButton.dataset.viewMovement}`)
       .then((movement) => openModal(renderMovementDetail(movement)))
       .catch((error) => showToast(error.message));
+    return;
   }
 
   const editMovementButton = event.target.closest('[data-edit-movement]');
@@ -1302,42 +1466,54 @@ function handleBodyClick(event) {
   if (productEdit) {
     event.preventDefault();
     const id = productEdit.dataset.productEdit;
-    const form = productEdit;
-    api(`/api/products/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        familyName: form.elements.familyName.value.trim(),
-        color: form.elements.color.value.trim(),
-        price: Number(form.elements.price.value || 0),
-      }),
-    })
+    const product = state.products.find((item) => String(item.id) === String(id));
+    if (!product) return showToast('Producto no encontrado.');
+    openModal(renderProductEditor(product));
+    const form = els.modalContent.querySelector('[data-product-form]');
+    if (form) {
+      bindProductModal(form);
+    }
+    return;
+  }
+
+  const productDelete = event.target.closest('[data-product-delete]');
+  if (productDelete) {
+    const id = productDelete.dataset.productDelete;
+    if (!confirm('Quieres eliminar este producto?')) return;
+    api(`/api/products/${id}`, { method: 'DELETE' })
       .then(async () => {
-        showToast('Producto actualizado.');
-        closeModal();
+        showToast('Producto eliminado.');
         await refreshAll();
       })
       .catch((error) => showToast(error.message));
+    return;
   }
 
   const clientEdit = event.target.closest('[data-client-edit]');
   if (clientEdit) {
     event.preventDefault();
     const id = clientEdit.dataset.clientEdit;
-    const form = clientEdit;
-    api(`/api/clients/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        name: form.elements.name.value.trim(),
-        ci: form.elements.ci.value.trim(),
-        phone: form.elements.phone.value.trim(),
-      }),
-    })
+    const client = state.clients.find((item) => String(item.id) === String(id));
+    if (!client) return showToast('Cliente no encontrado.');
+    openModal(renderClientEditor(client));
+    const form = els.modalContent.querySelector('[data-client-form]');
+    if (form) {
+      form.addEventListener('submit', handleClientSubmit);
+    }
+    return;
+  }
+
+  const clientDelete = event.target.closest('[data-client-delete]');
+  if (clientDelete) {
+    const id = clientDelete.dataset.clientDelete;
+    if (!confirm('Quieres eliminar este cliente?')) return;
+    api(`/api/clients/${id}`, { method: 'DELETE' })
       .then(async () => {
-        showToast('Cliente actualizado.');
-        closeModal();
+        showToast('Cliente eliminado.');
         await refreshAll();
       })
       .catch((error) => showToast(error.message));
+    return;
   }
 }
 
@@ -1617,9 +1793,8 @@ async function boot() {
   initDatePickers();
   document.querySelector('#export-form [name="from"]').value = todayISO();
   document.querySelector('#export-form [name="to"]').value = todayISO();
-  renderRegisterForm('product');
   await refreshAll();
-  setSection('register');
+  setSection('consult');
   showToast('Sistema listo.');
 }
 

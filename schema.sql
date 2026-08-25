@@ -1,7 +1,10 @@
+CREATE SEQUENCE IF NOT EXISTS movements_registro_orden_seq;
+
 CREATE TABLE IF NOT EXISTS movements (
   id BIGSERIAL PRIMARY KEY,
   kind TEXT NOT NULL CHECK (kind IN ('sale', 'order', 'purchase', 'production')),
   movement_date DATE NOT NULL,
+  registro_orden BIGINT NOT NULL DEFAULT nextval('movements_registro_orden_seq'),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
