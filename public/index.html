@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rosel Sis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="bg-orb orb-a"></div>
+    <div class="bg-orb orb-b"></div>
+    <main class="shell">
+      <section class="hero panel">
+        <div class="hero-copy">
+          <p class="eyebrow">Perfect Clothes</p>
+          <h1>Rosel Sis</h1>
+          <p class="lede">
+            Sistema persistente para ventas, compras, produccion, pedidos,
+            productos y clientes con PostgreSQL.
+          </p>
+          <div class="hero-actions">
+            <button class="hero-btn" data-nav="register">Registrar</button>
+            <button class="hero-btn" data-nav="consult">Consultar</button>
+            <button class="hero-btn hero-btn-accent" data-nav="export">
+              Exportar movimientos
+            </button>
+          </div>
+        </div>
+        <div class="hero-metrics">
+          <article class="metric">
+            <span>Productos</span>
+            <strong id="metric-products">0</strong>
+          </article>
+          <article class="metric">
+            <span>Clientes</span>
+            <strong id="metric-clients">0</strong>
+          </article>
+          <article class="metric">
+            <span>Ventas / pedidos</span>
+            <strong id="metric-sales">0</strong>
+          </article>
+          <article class="metric">
+            <span>Compras</span>
+            <strong id="metric-purchases">0</strong>
+          </article>
+        </div>
+      </section>
+
+      <section id="register-section" class="panel section">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Registrar</p>
+            <h2>Movimiento nuevo</h2>
+          </div>
+          <p class="muted">
+            Empieza por una opcion y completa el formulario con validaciones.
+          </p>
+        </div>
+        <div class="button-grid">
+          <button class="tile" data-form="product">Registrar producto</button>
+          <button class="tile" data-form="client">Registrar cliente</button>
+          <button class="tile" data-form="sale">Registrar venta</button>
+          <button class="tile" data-form="order">Registrar pedido</button>
+          <button class="tile" data-form="production">Registrar produccion</button>
+          <button class="tile" data-form="purchase">Registrar compra</button>
+        </div>
+        <div id="form-area" class="form-area"></div>
+      </section>
+
+      <section id="consult-section" class="panel section hidden">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Consultar</p>
+            <h2>CRUD y fichas</h2>
+          </div>
+          <p class="muted">
+            Ventas, compras y produccion en tablas separadas. Productos y
+            clientes tambien se administran aqui.
+          </p>
+        </div>
+
+        <div class="consult-layout">
+          <div class="consult-main">
+            <div class="tabs">
+              <button class="tab active" data-tab="sales">Ventas / pedidos</button>
+              <button class="tab" data-tab="purchase">Compras</button>
+              <button class="tab" data-tab="production">Produccion</button>
+            </div>
+
+            <div class="subtabs">
+              <button class="chip active" data-sale-filter="all">Todo</button>
+              <button class="chip" data-sale-filter="sale">Ventas</button>
+              <button class="chip" data-sale-filter="order">Pedidos</button>
+            </div>
+
+            <div id="table-area" class="table-wrap"></div>
+          </div>
+
+          <aside class="consult-side">
+            <article class="mini-panel">
+              <div class="mini-head">
+                <h3>Productos</h3>
+                <button class="mini-action" data-form="product">Nuevo</button>
+              </div>
+              <div id="products-sidebar" class="mini-list"></div>
+            </article>
+
+            <article class="mini-panel">
+              <div class="mini-head">
+                <h3>Clientes</h3>
+                <button class="mini-action" data-form="client">Nuevo</button>
+              </div>
+              <div id="clients-sidebar" class="mini-list"></div>
+            </article>
+          </aside>
+        </div>
+      </section>
+
+      <section id="export-section" class="panel section hidden">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Exportar</p>
+            <h2>Movimientos en Excel</h2>
+          </div>
+          <p class="muted">
+            El reporte usa exactamente las columnas solicitadas y descarga un
+            archivo .xlsx.
+          </p>
+        </div>
+
+        <form id="export-form" class="export-form">
+          <label class="field">
+            <span>Desde</span>
+            <input name="from" class="date-input" data-date required />
+          </label>
+          <label class="field">
+            <span>Hasta</span>
+            <input name="to" class="date-input" data-date required />
+          </label>
+          <button type="submit" class="primary">Descargar Excel</button>
+        </form>
+      </section>
+    </main>
+
+    <div id="modal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal></div>
+      <div class="modal-card">
+        <div id="modal-content"></div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

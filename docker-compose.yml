@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: rosel_sis_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rosel_sis
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - rosel_sis_pgdata:/var/lib/postgresql/data
+
+volumes:
+  rosel_sis_pgdata:
