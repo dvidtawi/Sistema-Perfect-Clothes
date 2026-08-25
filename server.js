@@ -59,6 +59,7 @@ async function ensureSchema() {
       client_id BIGINT REFERENCES clients(id) ON DELETE SET NULL,
       location TEXT,
       executed_by TEXT NOT NULL DEFAULT 'Rossell',
+      commission_mode TEXT NOT NULL DEFAULT 'total',
       commission NUMERIC(12,2),
       total_price NUMERIC(12,2) NOT NULL DEFAULT 0,
       observations TEXT
@@ -80,6 +81,7 @@ async function ensureSchema() {
       client_id BIGINT REFERENCES clients(id) ON DELETE SET NULL,
       location TEXT,
       executed_by TEXT NOT NULL DEFAULT 'Rossell',
+      commission_mode TEXT NOT NULL DEFAULT 'total',
       commission NUMERIC(12,2),
       total_price NUMERIC(12,2) NOT NULL DEFAULT 0,
       observations TEXT
@@ -113,6 +115,8 @@ async function ensureSchema() {
   `;
 
   await query(schema);
+  await query(`ALTER TABLE IF EXISTS sales ADD COLUMN IF NOT EXISTS commission_mode TEXT NOT NULL DEFAULT 'total'`);
+  await query(`ALTER TABLE IF EXISTS orders ADD COLUMN IF NOT EXISTS commission_mode TEXT NOT NULL DEFAULT 'total'`);
 }
 
 function cleanText(value) {
@@ -272,6 +276,7 @@ async function fetchSaleLikeRows(kind, from, to, id) {
         COALESCE(c.name, '') AS client_name_snapshot,
         s.location,
         s.executed_by,
+        s.commission_mode,
         s.commission,
         s.observations,
         COALESCE(
@@ -297,6 +302,7 @@ async function fetchSaleLikeRows(kind, from, to, id) {
       GROUP BY
         m.id, m.kind, m.movement_date, pr.name, s.total_price, s.product_id,
         s.client_id, c.name, s.location, s.executed_by, s.commission, s.observations
+        , s.commission_mode
       ORDER BY m.movement_date DESC, m.id DESC
     `,
     params
@@ -645,15 +651,16 @@ app.post('/api/movements', async (req, res) => {
           payload.commission === '' || payload.commission === null || payload.commission === undefined
             ? null
             : asMoney(payload.commission);
+        const commissionMode = payload.commissionMode === 'unit' ? 'unit' : 'total';
         if (kind === 'sale' && totalPrice === null) throw new Error('El precio total es requerido.');
 
         await client.query(
           `
             INSERT INTO ${kind === 'sale' ? 'sales' : 'orders'} (
-              movement_id, product_id, client_id, location, executed_by, commission, total_price, observations
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+              movement_id, product_id, client_id, location, executed_by, commission_mode, commission, total_price, observations
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
           `,
-          [movementId, productId, clientId, location, executedBy, commission, totalPrice || 0, observations]
+          [movementId, productId, clientId, location, executedBy, commissionMode, commission, totalPrice || 0, observations]
         );
 
         const itemsTable = kind === 'sale' ? 'sale_items' : 'order_items';
@@ -740,16 +747,17 @@ app.put('/api/movements/:id', async (req, res) => {
           payload.commission === '' || payload.commission === null || payload.commission === undefined
             ? null
             : asMoney(payload.commission);
+        const commissionMode = payload.commissionMode === 'unit' ? 'unit' : 'total';
         if (!productId || !items.length) throw new Error('Faltan datos del movimiento.');
 
         await client.query(
           `
             UPDATE ${table}
             SET product_id = $1, client_id = $2, location = $3, executed_by = $4,
-                commission = $5, total_price = $6, observations = $7
-            WHERE movement_id = $8
+                commission_mode = $5, commission = $6, total_price = $7, observations = $8
+            WHERE movement_id = $9
           `,
-          [productId, clientId, location, executedBy, commission, totalPrice, observations, id]
+          [productId, clientId, location, executedBy, commissionMode, commission, totalPrice, observations, id]
         );
         await client.query(`DELETE FROM ${itemsTable} WHERE ${movementFk} = $1`, [id]);
 
@@ -857,6 +865,9 @@ app.get('/api/export', async (req, res) => {
         .filter(Boolean)
         .join(' | ');
 
+      const commission = row.commission_mode === 'unit'
+        ? Number(row.commission || 0) * Number(row.quantity || 0)
+        : Number(row.commission || 0);
       worksheet.addRow({
         nro: row.id,
         fecha: row.movement_date,
@@ -869,7 +880,7 @@ app.get('/api/export', async (req, res) => {
         cliente: row.client_name_snapshot || '',
         lugar: row.location || '',
         ejecutante: row.executed_by || 'Rossell',
-        comision: row.commission || '',
+        comision: commission || '',
         observaciones: row.observations || '',
       });
     });

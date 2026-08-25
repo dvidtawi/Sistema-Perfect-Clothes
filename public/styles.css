@@ -261,6 +261,32 @@ h3 {
   font-size: 0.92rem;
 }
 
+.commission-mode {
+  display: inline-flex;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  width: fit-content;
+}
+
+.commission-option {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.commission-option.active {
+  background: linear-gradient(135deg, #ffd66c, #d79518);
+  color: #1c1406;
+}
+
 input,
 select,
 textarea {

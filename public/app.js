@@ -179,6 +179,24 @@ function money(value) {
   }).format(Number(value || 0));
 }
 
+function commissionTotal(row) {
+  const base = Number(row.commission || 0);
+  const quantity = Number(row.quantity || 0);
+  return row.commission_mode === 'unit' ? base * quantity : base;
+}
+
+function buildCommissionModeMarkup(selected = 'total') {
+  const totalActive = selected === 'total' ? 'active' : '';
+  const unitActive = selected === 'unit' ? 'active' : '';
+  return `
+    <div class="commission-mode" data-commission-mode-wrap>
+      <input type="hidden" name="commissionMode" value="${selected}" />
+      <button type="button" class="commission-option ${totalActive}" data-commission-mode="total">Total</button>
+      <button type="button" class="commission-option ${unitActive}" data-commission-mode="unit">Por unidad</button>
+    </div>
+  `;
+}
+
 function showToast(message) {
   els.toast.textContent = message;
   els.toast.classList.remove('hidden');
@@ -514,6 +532,14 @@ function movementFormTemplate({
       </label>
     `
     : '';
+  const commissionModeField = showCommission
+    ? `
+      <label class="field" data-commission-mode-field style="display:none;">
+        <span>Aplicacion de comision</span>
+        ${buildCommissionModeMarkup('total')}
+      </label>
+    `
+    : '';
 
   const clientField = allowClient
     ? `
@@ -551,6 +577,7 @@ function movementFormTemplate({
         ${clientField}
         ${sellerField}
         ${commissionField}
+        ${commissionModeField}
         ${locationField}
         <div class="field full">
           <span>${itemLabel}</span>
@@ -598,6 +625,7 @@ function wireMovementForm(form, config) {
   const executedBySelect = form.querySelector('[name="executedBy"]');
   const sellerOther = form.querySelector('[data-seller-other]');
   const commissionField = form.querySelector('[data-commission-field]');
+  const commissionModeField = form.querySelector('[data-commission-mode-field]');
   const allowPriceEdit = form.dataset.allowPriceEdit === '1';
 
   function addRow(prefill = {}) {
@@ -691,6 +719,13 @@ function wireMovementForm(form, config) {
     addRow({ quantity: 1 });
   }
 
+  function syncCommissionVisibility() {
+    if (!executedBySelect || !commissionField || !commissionModeField) return;
+    const show = executedBySelect.value !== 'Rossell';
+    commissionField.style.display = show ? 'grid' : 'none';
+    commissionModeField.style.display = show ? 'grid' : 'none';
+  }
+
   productSelect.addEventListener('change', rebuildRowsFromState);
   form.addEventListener('click', (event) => {
     if (event.target.matches('[data-add-item]')) {
@@ -712,6 +747,15 @@ function wireMovementForm(form, config) {
       if (row) row.remove();
       if (!itemsWrap.children.length) addRow({ quantity: 1 });
       refreshTotals(form);
+    }
+    if (event.target.matches('[data-commission-mode]')) {
+      const wrap = event.target.closest('[data-commission-mode-wrap]');
+      if (wrap) {
+        wrap.querySelector('[name="commissionMode"]').value = event.target.dataset.commissionMode;
+        wrap.querySelectorAll('[data-commission-mode]').forEach((button) => {
+          button.classList.toggle('active', button === event.target);
+        });
+      }
     }
   });
 
@@ -742,7 +786,7 @@ function wireMovementForm(form, config) {
       if (sellerOther && commissionField && event.target.tagName === 'SELECT') {
         const isOther = event.target.value === 'Otro';
         sellerOther.style.display = isOther ? 'grid' : 'none';
-        commissionField.style.display = event.target.value === 'Rossell' ? 'none' : 'grid';
+        syncCommissionVisibility();
       }
     }
   });
@@ -782,7 +826,7 @@ function wireMovementForm(form, config) {
     executedBySelect.addEventListener('change', () => {
       if (sellerOther && commissionField && executedBySelect.tagName === 'SELECT') {
         sellerOther.style.display = executedBySelect.value === 'Otro' ? 'grid' : 'none';
-        commissionField.style.display = executedBySelect.value === 'Rossell' ? 'none' : 'grid';
+        syncCommissionVisibility();
       }
     });
   }
@@ -790,6 +834,8 @@ function wireMovementForm(form, config) {
   if (clientSelect) {
     clientSelect.addEventListener('change', () => {});
   }
+
+  syncCommissionVisibility();
 }
 
   function buildMovementPayload(form, kind) {
@@ -872,6 +918,13 @@ function wireMovementForm(form, config) {
   if (executedBy) payload.executedBy = executedBy === 'Otro' ? form.elements.executedByCustom.value.trim() : executedBy;
   if (executedBy && executedBy !== 'Rossell') {
     payload.commission = Number(form.elements.commission?.value || 0);
+  }
+  const location = String(form.elements.location?.value || '').trim();
+  if (location) {
+    payload.location = location;
+  }
+  if (form.elements.commissionMode) {
+    payload.commissionMode = form.elements.commissionMode.value || 'total';
   }
   if (kind === 'order') {
     const clientId = form.elements.clientId?.value;
@@ -997,14 +1050,17 @@ function renderMovementTable(rows, mode) {
     mode === 'purchase'
       ? ['Fecha', 'Material', 'Cantidad', 'Color', 'Precio total', 'Lugar', 'Ejecutante', 'Acciones']
       : mode === 'production'
-        ? ['Fecha', 'Producto', 'Cantidad', 'Color', 'Talla', 'Precio', 'Acciones']
+        ? ['Fecha', 'Producto', 'Cantidad', 'Color', 'Talla', 'Acciones']
         : ['Fecha', 'Tipo', 'Producto', 'Cantidad', 'Color', 'Talla', 'Precio', 'Cliente', 'Lugar', 'Ejecutante', 'Acciones'];
 
   const body = rows.length
     ? rows
         .map((row) => {
           const items = Array.isArray(row.items) ? row.items : [];
-          const color = items.map((item) => `${item.color} x${item.quantity}`).join(' | ') || row.location || '';
+          const color =
+            mode === 'purchase'
+              ? items.map((item) => item.color).filter(Boolean).join(' | ') || row.location || ''
+              : items.map((item) => `${item.color} x${item.quantity}`).join(' | ') || row.location || '';
           const talla = items.map((item) => `${item.size || '-'} x${item.quantity}`).join(' | ');
           const tipo = row.kind === 'sale' ? 'Venta' : row.kind === 'order' ? 'Pedido' : row.kind === 'purchase' ? 'Compra' : 'Produccion';
           const actions = `
@@ -1038,7 +1094,6 @@ function renderMovementTable(rows, mode) {
                 <td>${row.quantity}</td>
                 <td>${escapeHtml(color)}</td>
                 <td>${escapeHtml(talla)}</td>
-                <td>${Number(row.total_price || 0) ? `Bs ${money(row.total_price)}` : '-'}</td>
                 <td>${actions}</td>
               </tr>
             `;
@@ -1095,17 +1150,19 @@ function renderMovementDetail(movement) {
           <strong>Cantidad</strong>
           <div class="subtle">${movement.quantity}</div>
         </div>
+        ${movement.kind === 'production' ? '' : `
         <div class="card">
           <strong>Precio total</strong>
-          <div class="subtle">${movement.kind === 'production' && !Number(movement.total_price || 0) ? '-' : `Bs ${money(movement.total_price)}`}</div>
+          <div class="subtle">Bs ${money(movement.total_price)}</div>
         </div>
+        `}
         <div class="card full">
           <strong>Detalle de colores y tallas</strong>
           <div class="subtle" style="margin-top:8px;">
             ${items
               .map(
                 (item) =>
-                  `<div>${escapeHtml(item.color || '-')} x${item.quantity} ${item.size ? `- talla ${escapeHtml(item.size)}` : ''} ${item.unit_price ? `- Bs ${money(item.unit_price)}` : ''}</div>`
+                  `<div>${escapeHtml(item.color || '-')} ${movement.kind === 'purchase' ? '' : `x${item.quantity}`} ${item.size ? `- talla ${escapeHtml(item.size)}` : ''} ${movement.kind !== 'production' && item.unit_price ? `- Bs ${money(item.unit_price)}` : ''}</div>`
               )
               .join('') || 'Sin detalle'}
           </div>
@@ -1124,7 +1181,7 @@ function renderMovementDetail(movement) {
         </div>
         <div class="card">
           <strong>Comision</strong>
-          <div class="subtle">${movement.commission ? `Bs ${money(movement.commission)}` : '-'}</div>
+          <div class="subtle">${movement.commission ? `Bs ${money(commissionTotal(movement))}` : '-'}</div>
         </div>
         <div class="card full">
           <strong>Observaciones</strong>
@@ -1364,10 +1421,14 @@ function renderMovementEditor(movement) {
             <input name="executedBy" value="${escapeHtml(movement.executed_by || 'Rossell')}" />
           </label>
         ` : ''}
-        ${movement.kind !== 'production' && movement.kind !== 'purchase' ? `
+        ${movement.kind === 'sale' || movement.kind === 'order' ? `
           <label class="field">
             <span>Comision</span>
             <input name="commission" type="number" min="0" step="0.01" value="${movement.commission || ''}" />
+          </label>
+          <label class="field full" data-commission-mode-field>
+            <span>Aplicacion de comision</span>
+            ${buildCommissionModeMarkup(movement.commission_mode || 'total')}
           </label>
         ` : ''}
         ${movement.kind === 'purchase' ? `
@@ -1409,6 +1470,12 @@ function renderMovementEditor(movement) {
             <input name="totalPrice" type="number" min="0" step="0.01" value="${movement.total_price}" required />
           </label>
           `}
+          ${(movement.kind === 'sale' || movement.kind === 'order') ? `
+          <label class="field">
+            <span>Lugar</span>
+            <input name="location" list="location-list" value="${escapeHtml(movement.location || '')}" />
+          </label>
+          ` : ''}
         `}
         <label class="field full">
           <span>Observaciones</span>

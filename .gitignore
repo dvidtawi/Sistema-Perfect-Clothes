@@ -66,3 +66,11 @@ debug.log
 .tern-port
 .eslintcache
 .parcel-cache
+
+# Docker
+.docker/
+docker-compose.override.yml
+*.dockerignore
+Dockerfile.*.local
+.dockerignore
+.containerd/
