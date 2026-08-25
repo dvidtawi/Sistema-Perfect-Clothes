@@ -1,0 +1,68 @@
+# Dependencias
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Variables de entorno
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+logs/
+*.log
+access.log
+error.log
+
+# Directorios de compilación
+dist/
+build/
+out/
+.next/
+.nuxt/
+
+# Cobertura de pruebas
+coverage/
+.nyc_output/
+
+# Configuración de IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.workspace
+*.iml
+
+# Archivos temporales
+tmp/
+temp/
+*.tmp
+
+# Base de datos SQLite
+*.sqlite
+*.sqlite3
+
+# Archivos de backup
+*.bak
+*.orig
+
+# Configuración de debugging
+debug.log
+
+# Archivos específicos de Node
+.tern-port
+.eslintcache
+.parcel-cache
